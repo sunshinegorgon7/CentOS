@@ -1,0 +1,77 @@
+#!/bin/env bash
+if ! [ $(id -u) = 0 ]; then echo "This script must be run as sudo or root, try again..."; exit 1; fi
+if ! [ $(uname -m) = "x86_64" ]; then echo "This script will only run on 64 bit versions of RHEL/CentOS"; exit 1; fi
+
+# Determine if OS is RHEL, CentOS or something else
+if grep -q "CentOS" /etc/redhat-release; then
+        OS_NAME="CentOS"
+elif grep -q "Red Hat Enterprise" /etc/redhat-release; then
+        OS_NAME="RHEL"
+else
+        echo "Unable to verify OS from /etc/redhat-release as CentOS or RHEL, this script is intended only for those distro's, exiting."
+        exit 1
+fi
+
+spinner () {
+spin='-\|/'
+
+i=0
+while kill -0 $1 2>/dev/null
+do
+  i=$(( (i+1) %4 ))
+  printf "\r${spin:$i:1}"
+  sleep .1
+done
+}
+
+echo '**Checking Epel'
+checkepel=$(yum list | grep epel-release | wc -l & \
+pid=$! \
+spinner $pid)
+
+if [[ $checkepel -ne 1 ]]; then
+echo '**Installing Epel'
+yum install epel-release > /dev/null &
+pid=$!
+spinner $pid
+else
+
+echo '**Epel-release is already installed'
+
+fi
+
+echo '**Installing Updates'
+yum update -y > /dev/null &
+pid=$!
+spinner $pid
+
+echo '**Installing basic Packages'
+yum install wget vim nfs-utils tcpdump -y > /dev/null &
+pid=$!
+spinner $pid
+
+echo '**Importing Kernel Repo Key'
+sudo rpm --import https://www.elrepo.org/RPM-GPG-KEY-elrepo.org > /dev/null &
+pid=$!
+spinner $pid
+
+echo '**Installing Repo'
+yum install https://www.elrepo.org/elrepo-release-7.el7.elrepo.noarch.rpm -y > /dev/null &
+pid=$!
+spinner $pid
+
+echo '**Installing Kernel Update'
+sudo yum --enablerepo=elrepo-kernel install kernel-lt -y > /dev/null &
+pid=$!
+spinner $pid
+
+echo '** Updating GRUB'
+sed -i 's/GRUB_DEFAULT.*/GRUB_DEFAULT=0/g' /etc/default/grub > /dev/null &
+pid=$!
+spinner $pid
+
+echo '** Updating Boot Configuration'
+sudo grub2-mkconfig -o /boot/grub2/grub.cfg 
+
+echo 'Rebooting! See you Soon'
+reboot
